@@ -110,6 +110,8 @@ export function pane(mode, context) {
     ${select("Paper size","paper",{a4:"A4",a3:"A3",letter:"US Letter"},"a4")}
     ${checkbox("Landscape","landscape")}${checkbox("Show observation outlines","marks",true)}
     ${select("Proof scale","print_scale",{"":"Fit to page","0.5":"1:2","1":"1:1"}, "", plane ? "" : "disabled")}
+    ${checkbox("Split across sheets at fixed scale (overlap + alignment marks)","tiled",true)}
+    <p class="muted" id="tileHint">Tiling applies to a fixed scale. When the crop is larger than one sheet, it prints across pages with matching overlap marks; seams move off circled defects where possible.</p>
     <details><summary>Crop for print</summary>${region()}</details>
     <div class="actions"><button type="submit" value="preview">Preview proof</button>
       <button type="submit" value="save" class="primary">Save PDF</button></div>

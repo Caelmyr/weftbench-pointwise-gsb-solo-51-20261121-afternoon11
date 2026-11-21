@@ -129,7 +129,7 @@ def outline(draw, points, extents, shade, *, width=2, loop=False):
             draw.line(clipped, fill=shade, width=width)
 
 
-def annotated(surface, marks, *, selected=None):
+def annotated(surface, marks, *, selected=None, labels=True):
     board = opaque(rgba(surface))
     painter = ImageDraw.Draw(board)
     width, height = board.size
@@ -142,6 +142,8 @@ def annotated(surface, marks, *, selected=None):
         outline(painter, mark["points"], board.size, color, width=thickness, loop=mark["shape"] == "polygon")
         for hole in mark.get("holes", []):
             outline(painter, hole, board.size, color, width=thickness, loop=True)
+        if not labels:
+            continue
         x, y = min(pixel_points(mark["points"], board.size), key=lambda p: (p[1], p[0]))
         x, y = max(0, min(width - 80, x + 4)), max(0, min(height - 21, y + 5))
         label(painter, (x, y), mark["title"], size=max(9, min(14, width // 50)), fill=color,

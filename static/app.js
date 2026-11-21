@@ -551,6 +551,9 @@ document.addEventListener("change", event => {
     document.querySelector("#toolFields").innerHTML = toolFields(state.tool,context());
     document.querySelector("#result").innerHTML = "";
     draw();
+  } else if (element.name === "print_scale") {
+    const tileBox = document.querySelector("#proofForm input[name=tiled]");
+    if (tileBox) tileBox.disabled = !element.value;
   }
 });
 
