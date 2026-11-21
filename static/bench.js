@@ -44,6 +44,14 @@ const settingsFor = {
   section: ({marks}) => select("Profile trace","trace",markChoices(marks,lineTypes.slice())),
   compare: ({fabric,capture}) => select("Reference photograph","reference",captureChoices(fabric,capture.id, row => row.role === capture.role)) +
     select("Difference","metric",{light:"Luminance",color:"Image color"},"light"),
+  relight: ({fabric,capture}) => select("Reference photograph","reference",captureChoices(fabric,capture.id, row => row.role === capture.role)) +
+    select("Difference","metric",{light:"Luminance",color:"Image color"},"light") +
+    `<p class="muted">Circle areas that kept their color between the two photographs. Each drag adds one stable reference, up to eight.</p>
+    <div class="actions">${checkboxMarks("Draw stable reference","refs")}</div>
+    <div id="refChips" class="chips"></div>
+    <details><summary>Correction limits</summary>
+      ${few([number("Reference reach","reach",0.4,0.05,1.5,0.05), number("Reference agreement","drift",0.16,0.02,1,0.01)])}
+    </details>`,
   coverage: ({fabric,capture}) => select("Reference photograph","reference",captureChoices(fabric,capture.id)),
   findings: ({options}) => select("Observation category","category",{any:"All categories",...options.mark_types},"any") +
     select("Observation state","state",{any:"Any state",...options.observation_states},"any"),

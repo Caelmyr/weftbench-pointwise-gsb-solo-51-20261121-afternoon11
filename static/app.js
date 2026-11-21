@@ -8,7 +8,7 @@ const notice = document.querySelector("#notice");
 const state = {
   tab:"library", options:null, fabrics:[], fabric:null, capture:null, plane:null, mode:"measure", tool:"pitch",
   drawings:true, gesture:null, points:[], anchor:null, cursor:null, imageURL:null, archiveRecord:null,
-  detailRegions:[], preflightURL:null,
+  detailRegions:[], referenceRegions:[], preflightURL:null,
 };
 let noticeTimer;
 
@@ -228,6 +228,7 @@ function paneTo(mode) {
   clearGesture();
   cleanupResult();
   state.detailRegions = [];
+  state.referenceRegions = [];
   state.mode = mode === "tone" ? "measure" : mode;
   if (mode === "align" && registered()) {
     state.plane = null;
@@ -249,7 +250,8 @@ function paneTo(mode) {
 function messageForGesture(mode) {
   const messages = {probe:"Click a pixel to sample it.",mark:"Click points on the photo to draw your observation.",
     corners:"Click the corners clockwise, starting at the top left.",region:"Drag on the photo to select the analysis area.",
-    lit:"Drag a box around the uncovered light reference.",landmarks:"Click a beginning and end for each measured span."};
+    lit:"Drag a box around the uncovered light reference.",landmarks:"Click a beginning and end for each measured span.",
+    refs:"Drag a box around an area that kept its color. Repeat for up to eight stable references."};
   return messages[mode];
 }
 
@@ -304,6 +306,14 @@ function draw() {
       pen.fillText(String(index + 1),x + 7,y - 5);
     });
   }
+  if (state.referenceRegions.length) {
+    pen.strokeStyle = "#7fd1c0";
+    pen.fillStyle = "#7fd1c0";
+    state.referenceRegions.forEach((region,index) => {
+      pen.strokeRect(region[0]*bounds.width,region[1]*bounds.height,region[2]*bounds.width,region[3]*bounds.height);
+      pen.fillText("R" + (index + 1),region[0]*bounds.width + 5,region[1]*bounds.height + 13);
+    });
+  }
 }
 
 function placeBox() {
@@ -317,13 +327,34 @@ function placeBox() {
   document.querySelector("#viewerNote").textContent = "Area selected. Run the tool to preview the result.";
 }
 
+function renderRefChips() {
+  const target = document.querySelector("#refChips");
+  if (target) target.innerHTML = state.referenceRegions.map((region,index) =>
+    `<button class="chip" type="button" data-remove-ref="${index}" aria-label="Remove reference R${index + 1}">R${index + 1} ×</button>`).join("");
+}
+
+function addReference() {
+  if (!state.anchor || !state.cursor) return;
+  const [[x,y],[a,b]] = [state.anchor,state.cursor];
+  const shape = [Math.min(x,a),Math.min(y,b),Math.abs(x-a),Math.abs(y-b)].map(value => Number(value.toFixed(6)));
+  if (shape[2] < .005 || shape[3] < .005) return;
+  if (state.referenceRegions.length >= 8) {
+    document.querySelector("#viewerNote").textContent = "Eight stable references is the maximum.";
+    return;
+  }
+  state.referenceRegions.push(shape);
+  renderRefChips();
+  document.querySelector("#viewerNote").textContent =
+    `Reference R${state.referenceRegions.length} added. Drag again for another, or run the inspection.`;
+}
+
 function canvasEvents() {
   const canvas = document.querySelector("#paint");
   if (!canvas) return;
   document.querySelector("#captureImage").addEventListener("load", draw);
   canvas.addEventListener("pointerdown", event => {
     if (event.button !== 0 || !state.gesture) return;
-    if (["region","lit"].includes(state.gesture)) {
+    if (["region","lit","refs"].includes(state.gesture)) {
       state.anchor = imagePoint(event);
       state.cursor = state.anchor;
       canvas.setPointerCapture(event.pointerId);
@@ -339,6 +370,9 @@ function canvasEvents() {
     if (["region","lit"].includes(state.gesture)) {
       state.cursor = position;
       placeBox();
+    } else if (state.gesture === "refs") {
+      state.cursor = position;
+      addReference();
     } else if (state.gesture === "probe") {
       state.points = [position];
       action(null,async () => result(await post(capturePath() + "/probe",{...planeArgs(),point:position}),{title:"Pixel sample"}));
@@ -357,6 +391,10 @@ async function measure(form, save) {
   delete measurement.tool;
   for (const key of ["mark","seam","cut","trace","reference"]) {
     if (!measurement[key]) delete measurement[key];
+  }
+  if (tool === "relight") {
+    if (!state.referenceRegions.length) throw new Error("Draw at least one stable reference area on the image.");
+    measurement.references = state.referenceRegions.map(region => region.slice());
   }
   if (tool === "checkpoints") {
     if (!state.plane) throw new Error("Select a calibrated fabric view first.");
@@ -547,6 +585,7 @@ document.addEventListener("change", event => {
     renderBench();
   } else if (element.name === "tool" && element.form?.id === "measureForm") {
     state.tool = element.value;
+    state.referenceRegions = [];
     clearGesture();
     document.querySelector("#toolFields").innerHTML = toolFields(state.tool,context());
     document.querySelector("#result").innerHTML = "";
@@ -600,6 +639,11 @@ document.addEventListener("click", event => {
     state.detailRegions.splice(Number(actionKey.removeDetail),1);
     node.remove();
     for (const [index,button] of Array.from(document.querySelectorAll("[data-remove-detail]")).entries()) button.dataset.removeDetail = index;
+  }
+  else if ("removeRef" in actionKey) {
+    state.referenceRegions.splice(Number(actionKey.removeRef),1);
+    renderRefChips();
+    draw();
   }
   else if (actionKey.approve) action(node,async () => {
     const approved = await post("/readings/" + actionKey.approve + "/swatch",{version:Number(actionKey.version)});

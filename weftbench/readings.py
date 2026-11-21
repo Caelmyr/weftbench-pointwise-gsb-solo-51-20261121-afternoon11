@@ -40,6 +40,7 @@ TOOLS = {
     "stitches": InspectionTool("Stitch rhythm", "Sewn finish", seams.stitches),
     "section": InspectionTool("Three-way surface profile", "Sewn finish", seams.edge_profile),
     "compare": InspectionTool("Calibrated image difference", "Paired evidence", comparison.compare, True),
+    "relight": InspectionTool("Reference-corrected difference", "Paired evidence", comparison.relight, True),
     "coverage": InspectionTool("Photo coverage ledger", "Paired evidence", comparison.coverage, True),
 }
 

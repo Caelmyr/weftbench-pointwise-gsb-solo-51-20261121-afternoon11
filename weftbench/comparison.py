@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from itertools import combinations
 import math
 
 import numpy as np
@@ -9,7 +10,9 @@ from PIL import ImageDraw
 from scipy import ndimage
 
 from .catalog import View, view
-from .contracts import WorkbenchError, box, choice, flag, identifier, integer, mapping, real, require_support
+from .contracts import (
+    WorkbenchError, box, choice, flag, identifier, integer, mapping, real, require_support, sequence,
+)
 from .geometry import box_mask, cut_rectangle
 from .inspection import common_box
 from .raster import Raster, blurred_masked, crop_raster, luma, quantiles, rgba, to_lab
@@ -115,7 +118,9 @@ def adjusted_views(first, second, shared, gains, radius):
     b = []
     mask = shared.copy()
     for channel in range(3):
-        before, can_before = blurred_masked(first.linear[:, :, channel] * gains[channel], shared, radius)
+        # Gains are either one RGB vector or a spatial per-pixel field.
+        local = np.take(gains, channel, axis=-1)
+        before, can_before = blurred_masked(first.linear[:, :, channel] * local, shared, radius)
         after, can_after = blurred_masked(second.linear[:, :, channel], shared, radius)
         a.append(before)
         b.append(after)
@@ -195,6 +200,243 @@ def compare(current, raw, lib):
         "note": "Difference within a physically aligned image pair, after the stated optional tonal reference.",
     }
     return report, {"map": legend(panel, "Paired image differences", titles), "pair": guide}, other.references()
+
+
+@dataclass(frozen=True)
+class RelightOptions:
+    reference: str
+    reference_plane: str | None
+    region: list
+    references: list
+    metric: str
+    smooth: float
+    tolerance: float
+    reach: float
+    drift: float
+    overlay_later: bool
+
+    @classmethod
+    def parse(cls, raw):
+        form = mapping(raw)
+        references = [box(item, "stable reference")
+                      for item in sequence(form.get("references"), "stable reference regions", 1, 8)]
+        return cls(
+            identifier(form.get("reference"), "reference capture"),
+            identifier(form.get("reference_plane"), "reference calibration", optional=True),
+            common_box(form),
+            references,
+            choice(form.get("metric"), "comparison metric", {"light", "color"}, "light"),
+            real(form.get("smooth"), "comparison smoothing", 0, 9, default=0.7),
+            real(form.get("tolerance"), "comparison threshold", 0.003, 30.0, default=0.085),
+            real(form.get("reach"), "reference reach", 0.05, 1.5, default=0.4),
+            real(form.get("drift"), "reference agreement", 0.02, 1.0, default=0.16),
+            flag(form.get("overlay_later"), "later photo under map", default=True),
+        )
+
+
+def measure_references(before, after, shared, boxes, extent):
+    entries = []
+    for index, sample in enumerate(boxes, 1):
+        region = box_mask(extent, sample)
+        usable = region & shared
+        total, good = int(region.sum()), int(usable.sum())
+        entry = {"index": index, "box": sample, "region_pixels": total, "used_pixels": good}
+        if good < 70 or good / max(1, total) < 0.4:
+            entries.append(entry | {"status": "occluded"})
+            continue
+        low = np.median(before.linear[usable], axis=0)
+        high = np.median(after.linear[usable], axis=0)
+        gains = high / np.maximum(low, 1e-6)
+        entry |= {"before_rgb": np.round(low, 6).tolist(), "after_rgb": np.round(high, 6).tolist()}
+        if np.min(low) < 0.015 or np.min(high) < 0.015 or np.any((gains < 0.4) | (gains > 2.5)):
+            entries.append(entry | {"status": "unstable"})
+            continue
+        x, y, width, height = sample
+        entries.append(entry | {
+            "status": "used", "rgb_multipliers": np.round(gains, 6).tolist(),
+            "center": [x + width / 2, y + height / 2], "log_gains": np.log(gains),
+        })
+    return entries
+
+
+def plane_residuals(points, logs, coef):
+    design = np.column_stack([points, np.ones(len(points))])
+    return np.max(np.abs(logs - design @ coef), axis=1)
+
+
+def planar_subset(points, logs, drift):
+    # A smooth lamp change follows a near-planar log-gain field. Search triples for
+    # the plane that keeps the most references within the agreement tolerance, and
+    # prefer the gentlest plane when candidates tie.
+    best = None
+    count = len(points)
+    for triple in combinations(range(count), 3):
+        chosen = points[list(triple)]
+        turn = np.cross(chosen[1] - chosen[0], chosen[2] - chosen[0])
+        if abs(turn) < 0.0002:
+            continue
+        design = np.column_stack([chosen, np.ones(3)])
+        coef, *_ = np.linalg.lstsq(design, logs[list(triple)], rcond=None)
+        residuals = plane_residuals(points, logs, coef)
+        inliers = tuple(np.nonzero(residuals <= drift)[0])
+        slope = float(np.max(np.hypot(coef[0], coef[1])))
+        key = (len(inliers), -slope, -float(residuals[list(inliers)].max()))
+        if best is None or key > best[0]:
+            best = (key, inliers, residuals)
+    return best
+
+
+def collinear_subset(points, logs, drift):
+    # References in a row still test agreement along their own line.
+    keep = list(range(len(points)))
+    while len(keep) >= 3:
+        axis = points[keep] - points[keep].mean(axis=0)
+        direction = axis[np.argmax(np.sum(axis * axis, axis=1))]
+        direction /= max(np.linalg.norm(direction), 1e-12)
+        along = (axis @ direction).reshape(-1, 1)
+        design = np.column_stack([along, np.ones(len(keep))])
+        coef, *_ = np.linalg.lstsq(design, logs[keep], rcond=None)
+        residuals = np.max(np.abs(logs[keep] - design @ coef), axis=1)
+        worst = int(np.argmax(residuals))
+        if residuals[worst] <= drift:
+            break
+        keep.pop(worst)
+    return keep
+
+
+def mark_inconsistent(used, drift):
+    # Two references always admit a smooth field, and three non-collinear ones admit
+    # a planar one, so agreement can only be tested once enough references remain.
+    if len(used) < 3:
+        return used
+    points = np.array([entry["center"] for entry in used])
+    logs = np.array([entry["log_gains"] for entry in used])
+    best = planar_subset(points, logs, drift) if len(used) >= 4 else None
+    if best is not None:
+        _, inliers, residuals = best
+        keep = set(inliers)
+    elif len(used) == 3 and abs(np.cross(points[1] - points[0], points[2] - points[0])) >= 0.0002:
+        return used
+    else:
+        keep = set(collinear_subset(points, logs, drift))
+        residuals = None
+    remaining = []
+    for index, entry in enumerate(used):
+        if index in keep:
+            remaining.append(entry)
+            continue
+        entry["status"] = "inconsistent"
+        if residuals is not None:
+            entry["fit_deviation"] = round(float(residuals[index]), 6)
+    return remaining
+
+
+def box_distance(sample, extent):
+    width, height = extent
+    left, top, right, bottom = cut_rectangle(sample, extent)
+    xs = np.arange(width, dtype=np.float32)
+    ys = np.arange(height, dtype=np.float32)
+    dx = np.maximum.reduce([left - xs, xs - (right - 1), np.zeros(width, dtype=np.float32)])
+    dy = np.maximum.reduce([top - ys, ys - (bottom - 1), np.zeros(height, dtype=np.float32)])
+    return np.hypot(dx[None, :], dy[:, None]) / max(width, height)
+
+
+def illumination_field(used, extent):
+    width, height = extent
+    weight = np.zeros((height, width), dtype=np.float32)
+    field = np.zeros((height, width, 3), dtype=np.float32)
+    nearest = np.full((height, width), np.inf, dtype=np.float32)
+    for entry in used:
+        distance = box_distance(entry["box"], extent)
+        nearest = np.minimum(nearest, distance)
+        local = 1.0 / (distance * distance + 0.0009)
+        weight += local
+        field += local[:, :, None] * entry["log_gains"].astype(np.float32)[None, None, :]
+    field /= np.maximum(weight, 1e-12)[:, :, None]
+    return np.exp(field), nearest
+
+
+def public_reference(entry):
+    keep = ("index", "box", "status", "region_pixels", "used_pixels", "before_rgb", "after_rgb",
+            "rgb_multipliers", "fit_deviation")
+    return {key: entry[key] for key in keep if key in entry}
+
+
+def reference_outlines(panel, entries, extent):
+    pencil = ImageDraw.Draw(panel)
+    for entry in entries:
+        left, top, right, bottom = cut_rectangle(entry["box"], extent)
+        shade = TEAL if entry["status"] == "used" else PINK
+        pencil.rectangle((left, top, right - 1, bottom - 1), outline=shade, width=2)
+        label(pencil, (left + 2, top + 2), f"R{entry['index']}", size=10, fill=shade)
+    return panel
+
+
+def relight(current, raw, lib):
+    settings = RelightOptions.parse(raw)
+    other, surface_b, readable_b = two_views(lib, current, settings)
+    extent = current.surface.extent
+    whole = box_mask(extent, settings.region)
+    intersected = current.readable & readable_b
+    entries = measure_references(surface_b, current.surface, intersected, settings.references, extent)
+    used = mark_inconsistent([entry for entry in entries if entry["status"] == "used"], settings.drift)
+    if not used:
+        raise WorkbenchError(
+            "None of the circled stable references is readable and in agreement on both photographs.",
+            "references")
+    gains, nearest = illumination_field(used, extent)
+    excluded = np.zeros(whole.shape, dtype=bool)
+    for entry in entries:
+        if entry["status"] != "used":
+            excluded |= box_mask(extent, entry["box"])
+    adjusted, latest, good = adjusted_views(surface_b, current.surface, intersected, gains, settings.smooth)
+    within = good & whole
+    comparable = within & (nearest <= settings.reach) & ~excluded
+    require_support(int(whole.sum()), int(comparable.sum()), "Agreeing reference coverage", 85, fraction=0.25)
+    limit = explicit_tolerance(settings.metric, settings.tolerance)
+    discrepancy = residual_values(adjusted, latest, settings.metric, comparable)
+    ready = np.abs(discrepancy) >= limit
+    classes = {
+        "decreased": comparable & ready & (discrepancy < 0),
+        "increased": comparable & ready & (discrepancy >= 0),
+        "within_tolerance": comparable & ~ready,
+        "not_supported": whole & ~within,
+        "no_reference_basis": whole & within & ~comparable,
+    }
+    counts = {key: extent_statistics(mask, current.scale) for key, mask in classes.items()}
+    canvas = current.surface if settings.overlay_later else surface_b
+    composite = np.zeros(whole.shape, dtype=np.uint8)
+    composite[classes["not_supported"]] = 1
+    composite[classes["no_reference_basis"]] = 2
+    composite[classes["decreased"]] = 3
+    composite[classes["increased"]] = 4
+    panel = blended_overlay(canvas, composite, {1: LILAC, 2: PINK, 3: OCHRE, 4: TEAL})
+    titles = [("Unavailable on one or both captures", LILAC), ("No agreeing reference coverage", PINK)]
+    if settings.metric == "light":
+        titles.extend([("Lower illumination value", OCHRE), ("Higher illumination value", TEAL)])
+    else:
+        titles.append(("Greater than selected color tolerance", TEAL))
+    guide = side_panel(surface_b, current.surface, settings.region, other.capture["title"], current.capture["title"])
+    report = {
+        "reference": other.capture["id"], "reference_plane": other.plane["id"],
+        "box": settings.region, "metric": settings.metric,
+        "references": [public_reference(entry) for entry in entries],
+        "references_used": len(used),
+        "illumination_field": {
+            "reach": settings.reach, "agreement": settings.drift,
+            "red_multipliers": quantiles(gains[:, :, 0][comparable]),
+            "green_multipliers": quantiles(gains[:, :, 1][comparable]),
+            "blue_multipliers": quantiles(gains[:, :, 2][comparable]),
+        },
+        "measured": counts,
+        "difference_percentiles": quantiles(discrepancy[comparable]),
+        "tolerance": limit,
+        "note": "Difference within a physically aligned image pair after correcting illumination "
+                "from the circled stable references. Areas without agreeing reference coverage "
+                "cannot be compared.",
+    }
+    artwork = legend(reference_outlines(panel, entries, extent), "Reference-corrected image differences", titles)
+    return report, {"map": artwork, "pair": guide}, other.references()
 
 
 @dataclass(frozen=True)
