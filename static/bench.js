@@ -28,6 +28,10 @@ function markChoices(marks, kinds, includeNone = true) {
 const settingsFor = {
   audit: () => few([number("Low signal", "low", 0.045, 0.005, 0.30), number("Highlight threshold", "high", 0.94, 0.60, 0.999)]),
   pitch: () => few([number("Shortest spacing (px)","min_period",3,2.2,24), number("Longest spacing (px)","max_period",36,3,100)]),
+  density: () => few([number("Width stations","stations",10,4,24,1),
+    number("Shortest spacing (px)","min_period",3,2.2,24)]) +
+    few([number("Longest spacing (px)","max_period",36,3,100),
+      number("Shading radius (px)","background",25,4,95)]),
   skew: () => "",
   bands: () => select("Trace direction","axis",{"cross-roll":"Across the width","along-roll":"Along the roll"},"cross-roll"),
   openings: () => few([number("Local contrast","contrast",0.145,0.015,0.85), number("Minimum area (px²)","min_area",20,2,900,1)]),

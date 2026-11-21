@@ -1,4 +1,5 @@
 import {api, asset, checkbox, escape, field, fields, notes, png, post, select} from "./api.js";
+import {densityChart} from "./curve.js";
 
 function list(rows, empty) {
   return rows.length ? `<div class="record-list">${rows.map(row =>
@@ -73,10 +74,14 @@ function media(record) {
     ).join("")}</div>` : ""}`;
 }
 
-export function renderEvidence(record) {
+export function renderEvidence(record, controls = {}) {
+  const density = record.kind === "readings" && record.tool === "density" && record.analysis?.station_bounds
+    ? `<section class="panel density-panel"><h3>Reopened density curve</h3>
+       ${densityChart(record.analysis, {onSelect: controls.locateStation ? index => controls.locateStation(record, index) : null})}
+       </section>` : "";
   return `<h2>${escape(record.title)}</h2>
     <div class="chips"><span class="chip">Revision ${record.version}</span><span class="chip">${escape(record.kind)}</span>
-    ${record.review_state ? `<span class="chip">${escape(record.review_state)}</span>` : ""}</div>${media(record)}
+    ${record.review_state ? `<span class="chip">${escape(record.review_state)}</span>` : ""}</div>${density}${media(record)}
     ${record.sources?.length ? `<details open><summary>Source citations</summary><div class="record-list">${record.sources.map(row => `
        <button type="button" class="record-row" data-record="${row.source}" data-version="${row.version}">
          ${escape(row.role)} <small>revision ${row.version}</small></button>`).join("")}</div></details>` : ""}

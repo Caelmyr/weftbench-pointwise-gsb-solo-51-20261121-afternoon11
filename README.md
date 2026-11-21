@@ -12,7 +12,7 @@ For a Python-only launch, use Python 3.11 and install the versions in `requireme
 
 1. Select **Load training fabrics** or use **Add fabric** and **Import photo**. The Juniper and Bluestone training collections are synthetic. Their photographs and dimensions illustrate the tools.
 2. Open an incoming face photograph at the inspection bench. The coordinate selector switches between the saved physical plane and the original view. Use **Calibrate** to place four clockwise corners on a new source and save a plane.
-3. Select **Warp and weft pitch** and run or save the reading. Use **Observe** to draw a polygon or a sewn trace. Use **Sample pixel** for a local image-color and support reading.
+3. Select **Warp and weft pitch** and run or save the reading. **Segmented yarn density curve** divides the cloth width into stations and reports a real-scale density curve; click a station on the curve to locate its strip on the photograph, and held or unresolvable stations stay blank. Use **Observe** to draw a polygon or a sewn trace. Use **Sample pixel** for a local image-color and support reading.
 4. Choose a transmitted-light photograph for opening candidates or relative light passage. Choose a raking-light photograph for relief and optical abrasion. Select a compatible second view for paired inspection.
 5. Use **Details** to save picture crops with source location, coverage maps, and native working-pixel downloads. **Print** makes a cropped physical proof or fit-to-page PDF.
 6. Open the **Evidence desk** to review prior observations and measurements, approve a color reading, record a visit, assemble a contact sheet, or create and verify an evidence ZIP. File links download the retained bytes.

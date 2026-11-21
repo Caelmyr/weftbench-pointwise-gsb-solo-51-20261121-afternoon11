@@ -1,6 +1,7 @@
 import {api, asset, checkbox, choices, escape, field, fields, notes, png, post, readBoxes, select} from "./api.js";
 import {lineTypes, pairRows, pane, ribbon, studyTools, toolFields} from "./bench.js";
 import {archivePage, handleArchiveForm, loadRecord, renderEvidence, swatchPair} from "./evidence.js";
+import {bindDensityChart, densityChart, stationBox} from "./curve.js";
 
 const app = document.querySelector("#app");
 const dialog = document.querySelector("#dialog");
@@ -8,7 +9,7 @@ const notice = document.querySelector("#notice");
 const state = {
   tab:"library", options:null, fabrics:[], fabric:null, capture:null, plane:null, mode:"measure", tool:"pitch",
   drawings:true, gesture:null, points:[], anchor:null, cursor:null, imageURL:null, archiveRecord:null,
-  detailRegions:[], preflightURL:null,
+  detailRegions:[], preflightURL:null, density:null, selectedStation:null, locate:null,
 };
 let noticeTimer;
 
@@ -52,6 +53,12 @@ function clearGesture() {
   state.cursor = null;
 }
 
+function clearDensity() {
+  state.density = null;
+  state.selectedStation = null;
+  state.locate = null;
+}
+
 function cleanupResult() {
   if (state.imageURL) URL.revokeObjectURL(state.imageURL);
   state.imageURL = null;
@@ -85,6 +92,7 @@ function chooseCapture(row, planeId) {
   state.mode = "measure";
   state.tool = defaultTool(row);
   clearGesture();
+  clearDensity();
 }
 function defaultTool(row) {
   if (row?.role === "backlight") return "openings";
@@ -168,8 +176,42 @@ function renderArchive() {
   app.innerHTML = archivePage(state.fabric,state.options);
   if (state.archiveRecord) {
     const target = document.querySelector("#evidenceResult");
-    if (target) target.innerHTML = renderEvidence(state.archiveRecord);
+    if (target) {
+      target.innerHTML = renderEvidence(state.archiveRecord, {locateStation: locateReopenedStation});
+      const panel = target.querySelector(".density-panel");
+      if (panel) bindDensityChart(panel, index => locateReopenedStation(state.archiveRecord, index));
+    }
   }
+}
+
+function locateReopenedStation(record, index) {
+  const captureId = record.parameters?.capture;
+  const planeId = record.parameters?.plane || null;
+  const box = stationBox(record.analysis, index);
+  if (!captureId || !box) {
+    notify("This retained reading no longer resolves to a photograph position.", true);
+    return;
+  }
+  const fabricId = record.parent;
+  const open = () => {
+    const capture = state.fabric?.captures.find(row => row.id === captureId);
+    if (!capture) { notify("The supporting photograph is not in this fabric library.", true); return; }
+    chooseCapture(capture, planeId);
+    state.locate = box;
+    state.selectedStation = index;
+    state.density = record.analysis;
+    renderBench();
+    const row = record.analysis.warp[index];
+    document.querySelector("#viewerNote").innerHTML =
+      `Reopened station ${index + 1} from "${escape(record.title)}". ${
+        row?.count_per_100_mm === null
+          ? "Left blank: " + escape(row?.status || "unresolved evidence")
+          : `Warp ${escape(row.count_per_100_mm)} · weft ${escape(record.analysis.weft[index]?.count_per_100_mm ?? "blank")} threads / 100 mm`}
+       <button type="button" data-clear-locate>Clear outline</button>`;
+    draw();
+  };
+  if (state.fabric?.id === fabricId) open();
+  else action(null, async () => { await openFabric(fabricId); open(); });
 }
 
 function showDialog(title, body) {
@@ -207,6 +249,10 @@ function result(record, options = {}) {
   const target = document.querySelector("#result");
   if (!target) return;
   const values = record.analysis ?? record;
+  if (record.tool === "density" && values.station_bounds) {
+    densityResult(target, record, options);
+    return;
+  }
   const short = Object.entries(values).filter(([,value]) => ["number","boolean","string"].includes(typeof value) && String(value).length < 62).slice(0,8);
   const metrics = short.length ? `<div class="metrics">${short.map(([name,value]) =>
     `<div><small>${escape(name.replaceAll("_"," "))}</small><strong>${escape(value)}</strong></div>`).join("")}</div>` : "";
@@ -215,6 +261,38 @@ function result(record, options = {}) {
     ${record.id ? `<div class="actions"><button data-record="${record.id}">Open retained evidence</button>
       ${record.tool === "color" ? `<button data-approve="${record.id}" data-version="${record.version}">Approve swatch</button>` : ""}</div>` : ""}
     <details><summary>Result details</summary><pre>${escape(JSON.stringify(values,null,2))}</pre></details>`;
+}
+
+function densityResult(target, record, options) {
+  const analysis = record.analysis;
+  state.density = analysis;
+  const blankWarp = analysis.warp.filter(row => row.count_per_100_mm === null).length;
+  const blankWeft = analysis.weft.filter(row => row.count_per_100_mm === null).length;
+  target.innerHTML = `<h3>${escape(options.title || record.title || "Segmented yarn density")}</h3>
+    <div class="metrics">
+      <div><small>width stations</small><strong>${analysis.stations}</strong></div>
+      <div><small>blank warp stations</small><strong>${blankWarp}</strong></div>
+      <div><small>blank weft stations</small><strong>${blankWeft}</strong></div>
+    </div>
+    ${densityChart(analysis, {onSelect: selectDensityStation, selected: state.selectedStation})}
+    ${options.url ? `<details><summary>Map and chart artwork</summary><img class="result-visual" src="${escape(options.url)}" alt="Density station map"></details>` : ""}
+    ${record.id ? `<div class="actions"><button data-record="${record.id}">Open retained evidence</button></div>` : ""}
+    <details><summary>Result details</summary><pre>${escape(JSON.stringify(analysis,null,2))}</pre></details>`;
+  bindDensityChart(target, index => selectDensityStation(index));
+}
+
+function selectDensityStation(index) {
+  if (!state.density) return;
+  state.selectedStation = index;
+  const box = stationBox(state.density, index);
+  state.locate = box;
+  const row = state.density.warp[index];
+  document.querySelector("#viewerNote").innerHTML =
+    `Station ${index + 1} located on the photograph. ${row?.count_per_100_mm === null
+      ? "This station was left blank: " + escape(row?.status || "unresolved evidence")
+      : `Warp ${escape(row.count_per_100_mm)} · weft ${escape(state.density.weft[index]?.count_per_100_mm ?? "blank")} threads / 100 mm`}
+     <button type="button" data-clear-locate>Clear outline</button>`;
+  draw();
 }
 
 function previewImage(blob) {
@@ -227,6 +305,7 @@ function paneTo(mode) {
   if (!state.capture) return;
   clearGesture();
   cleanupResult();
+  clearDensity();
   state.detailRegions = [];
   state.mode = mode === "tone" ? "measure" : mode;
   if (mode === "align" && registered()) {
@@ -303,6 +382,17 @@ function draw() {
       pen.fill();
       pen.fillText(String(index + 1),x + 7,y - 5);
     });
+  }
+  if (state.locate) {
+    const [bx,by,bw,bh] = state.locate;
+    const a = xy([bx,by]), b = xy([bx + bw,by + bh]);
+    pen.setLineDash([]);
+    pen.lineWidth = 3;
+    pen.strokeStyle = "#e89c52";
+    pen.strokeRect(a[0],a[1],b[0]-a[0],b[1]-a[1]);
+    const cx = (a[0] + b[0]) / 2;
+    pen.fillStyle = "#e89c52";
+    pen.fillText(String((state.selectedStation ?? 0) + 1), cx - 4, a[1] - 8);
   }
 }
 
@@ -403,14 +493,21 @@ async function measure(form, save) {
   if (save) {
     const report = await post(endpoint,body);
     await refreshActive();
-    const role = ["map","pair","chart","card"].find(name => report.proofs.includes(name));
-    result(report,{url:role ? asset(report.id,role) : null});
+    if (tool === "density") result(report,{url:asset(report.id,"map")});
+    else {
+      const role = ["map","pair","chart","card"].find(name => report.proofs.includes(name));
+      result(report,{url:role ? asset(report.id,role) : null});
+    }
     notify("Reading saved to evidence.");
   } else {
     const report = await post(endpoint + "/preview",body);
-    const role = ["map","pair","chart","card"].find(name => report.proofs.includes(name));
-    const image = role ? previewImage(await png(endpoint + "/preview/" + role + ".png",body)) : null;
-    result(report,{url:image});
+    if (tool === "density") {
+      result(report,{title:"Segmented yarn density preview",url:previewImage(await png(endpoint + "/preview/map.png",body))});
+    } else {
+      const role = ["map","pair","chart","card"].find(name => report.proofs.includes(name));
+      const image = role ? previewImage(await png(endpoint + "/preview/" + role + ".png",body)) : null;
+      result(report,{url:image});
+    }
   }
 }
 
@@ -541,6 +638,7 @@ document.addEventListener("change", event => {
   if (element.id === "planeSelect") {
     state.plane = state.fabric.planes.find(row => row.id === element.value) || null;
     clearGesture();
+    clearDensity();
     renderBench();
   } else if (element.id === "showMarks") {
     state.drawings = element.checked;
@@ -548,6 +646,7 @@ document.addEventListener("change", event => {
   } else if (element.name === "tool" && element.form?.id === "measureForm") {
     state.tool = element.value;
     clearGesture();
+    clearDensity();
     document.querySelector("#toolFields").innerHTML = toolFields(state.tool,context());
     document.querySelector("#result").innerHTML = "";
     draw();
@@ -567,6 +666,8 @@ document.addEventListener("click", event => {
   else if (actionKey.draw) startGesture(actionKey.draw);
   else if ("undo" in actionKey) { state.points.pop(); draw(); }
   else if ("clear" in actionKey) { state.points = []; state.anchor = null; state.cursor = null; draw(); }
+  else if ("clearLocate" in actionKey) { clearDensity(); draw();
+    document.querySelector("#viewerNote").textContent = "Station outline cleared."; }
   else if (actionKey.capture) {
     chooseCapture(state.fabric.captures.find(row => row.id === actionKey.capture));
     cleanupResult();
