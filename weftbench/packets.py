@@ -23,7 +23,7 @@ SCHEMA = "weftbench-evidence-v1"
 RECEIPT = "weftbench.json"
 NUMBERED_PATH = re.compile(r"^evidence/[0-9]{3}\.jpg$")
 PACKET_LIMIT = 38
-ENTRY_KINDS = {"captures", "readings", "swatches", "proofs", "details"}
+ENTRY_KINDS = {"captures", "readings", "swatches", "proofs", "details", "cut_plans"}
 
 
 @dataclass(frozen=True)

@@ -23,10 +23,11 @@ export function archivePage(fabric, options) {
   }
   const groups = [
     ["Saved readings",fabric.readings],["Observed marks",fabric.marks],
+    ["Cut plans",fabric.cut_plans || []],
     ["Approved color samples",fabric.swatches],["Print proofs",fabric.proofs || []],["Native detail sheets",fabric.details || []],
     ["Inspection visits",fabric.visits],["Portable bundles",fabric.packets],
   ];
-  const photos = [...fabric.captures,...fabric.readings,...fabric.swatches,...(fabric.proofs || []),...(fabric.details || [])];
+  const photos = [...fabric.captures,...fabric.readings,...(fabric.cut_plans || []),...fabric.swatches,...(fabric.proofs || []),...(fabric.details || [])];
   const swatches = Object.fromEntries(fabric.swatches.filter(row => row.state === "approved").map(row => [row.id,row.title]));
   return heading + `<div class="archive-grid"><div>
     ${groups.map(([name,rows]) => `<section class="panel"><h3>${escape(name)}</h3>${list(rows,"None retained.")}</section>`).join("")}
@@ -51,7 +52,7 @@ export function archivePage(fabric, options) {
       ${field("Date","observed_day","date",new Date().toISOString().slice(0,10),"required")}
       ${select("Visit type","visit_type",options.visit_types)}${select("Decision","outcome",options.visit_outcomes)}
       ${notes("Notes","memo")}
-      ${selectable([...fabric.marks,...fabric.readings,...(fabric.details || [])])}
+      ${selectable([...fabric.marks,...fabric.readings,...(fabric.cut_plans || []),...(fabric.details || [])])}
       <button type="submit" class="primary">Save visit</button>
     </form></section>
     ${intake}
@@ -68,9 +69,24 @@ function media(record) {
     .map(role => files.find(file => file.role === role)).find(Boolean);
   return `${artwork ? `<img class="result-visual" src="${asset(record.id,artwork.role)}" alt="${escape(record.title)} · ${escape(artwork.role)}">` : ""}
     ${record.kind === "visits" ? `<img class="result-visual" src="/api/visits/${record.id}/proof.png?version=${record.version}" alt="Visit review sheet">` : ""}
+    ${record.kind === "cut_plans" ? cutPlacementTable(record) : ""}
     ${files.length > 0 ? `<div class="actions">${files.map(file =>
       `<a class="button" href="${asset(record.id,file.role,true)}" download>↓ ${escape(file.role)}</a>`
     ).join("")}</div>` : ""}`;
+}
+
+function cutPlacementTable(record) {
+  const rows = (record.pieces || []).map(row => `<tr>
+      <td>${escape(row.name)}</td><td>${escape(row.role)}</td>
+      <td>${row.left_mm}, ${row.top_mm}</td><td>${row.width_mm} × ${row.height_mm}</td>
+      <td>${row.locked ? "Yes" : "No"}</td><td>${row.turned ? "Yes" : "No"}</td></tr>`).join("");
+  const missing = (record.missing || []).length
+    ? `<p class="muted">Not placed: ${record.missing.map(row => escape(row.name)).join(", ")}</p>` : "";
+  return `<div class="chips"><span class="chip">${escape(record.kept_label)}</span>
+      <span class="chip">${record.plane_mm.map(Math.round).join(" × ")} mm plane</span>
+      <span class="chip">${record.clearance_mm} mm defect margin</span></div>
+    <table class="cut-table"><thead><tr><th>Piece</th><th>Role</th><th>Left, top (mm)</th><th>Width × height (mm)</th><th>Grain locked</th><th>Turned</th></tr></thead>
+    <tbody>${rows}</tbody></table>${missing}`;
 }
 
 export function renderEvidence(record) {

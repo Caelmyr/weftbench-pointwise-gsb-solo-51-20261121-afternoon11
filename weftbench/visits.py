@@ -14,6 +14,7 @@ from .raster import fit_image, opaque, png
 CITABLE = {
     "marks": "Observation", "captures": "Source photo", "readings": "Inspection",
     "swatches": "Approved color", "planes": "Fabric plane", "details": "Detail sheet",
+    "cut_plans": "Cut plan",
 }
 VISIT_KINDS = {
     "incoming": "Incoming quality check", "process": "In-process recheck",

@@ -338,7 +338,7 @@ def fabric_detail(store, key):
         entries = {}
         for name, count in (("captures", MAX_CAPTURES), ("planes", MAX_CAPTURES * 4), ("marks", MAX_MARKS),
                             ("readings", 120), ("swatches", 80), ("visits", 80), ("packets", 70),
-                            ("proofs", 55), ("details", 48)):
+                            ("proofs", 55), ("details", 48), ("cut_plans", 40)):
             found = lib.list(name, parent=key, limit=count)
             entries[name] = [lib.public(item) if name in {"captures", "swatches", "packets"} else item
                              for item in found]

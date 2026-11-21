@@ -419,6 +419,78 @@ async function showRecord(id, version) {
   setTab("archive");
 }
 
+function pieceRows(form) {
+  const pieces = [];
+  for (const row of form.querySelectorAll("[data-piece]")) {
+    const role = row.querySelector("[data-piece-role]").value;
+    if (!role) continue;
+    const width = Number(row.querySelector("[data-piece-width]").value);
+    const height = Number(row.querySelector("[data-piece-height]").value);
+    if (!(width > 0) || !(height > 0)) {
+      throw new Error(`Enter a width and height for piece ${Number(row.dataset.piece) + 1}.`);
+    }
+    pieces.push({
+      name:row.querySelector("[data-piece-name]").value.trim() || `Piece ${pieces.length + 1}`,
+      role, width_mm:width, height_mm:height,
+      locked:row.querySelector("[data-piece-locked]").checked,
+    });
+  }
+  if (!pieces.length) throw new Error("Enter at least one cut piece.");
+  if (!pieces.some(row => row.role === "required")) throw new Error("Mark at least one piece as mandatory.");
+  return pieces;
+}
+
+function cutPayload(form) {
+  if (!state.plane) throw new Error("Choose a saved calibration on this photo before planning cuts.");
+  const base = fields(form);
+  const payload = {
+    ...planeArgs(),
+    title:base.title,
+    clearance_mm:base.clearance_mm,
+    scenario:base.scenario,
+    pieces:pieceRows(form),
+    defect_types:[...form.querySelectorAll('input[name="defect"]:checked')].map(node => node.value),
+  };
+  if (!payload.defect_types.length) throw new Error("Choose at least one defect observation category.");
+  if (base.use_reserve) {
+    if (!(base.reserve_width_mm > 0) || !(base.reserve_height_mm > 0)) {
+      throw new Error("Enter the clean reserve width and height.");
+    }
+    payload.reserve = {
+      name:base.reserve_name || "Clean reserve", width_mm:base.reserve_width_mm,
+      height_mm:base.reserve_height_mm, locked:!!base.reserve_locked,
+    };
+  }
+  return payload;
+}
+
+function cutSummary(report, payload) {
+  const rows = Object.entries(report.scenarios).map(([key, block]) => {
+    const names = block.placed.map(row => `${escape(row.name)} (${row.width_mm}×${row.height_mm} mm at ${row.left_mm}, ${row.top_mm})`).join("; ");
+    const short = block.missing.length ? `<p class="muted">Not placed: ${block.missing.map(row => `${escape(row.name)} — ${escape(row.reason)}`).join("; ")}</p>` : "";
+    const bound = block.bound?.certainly_impossible ? '<p class="muted">Even by area the mandatory pieces exceed the usable cloth.</p>' : "";
+    const status = block.status === "does_not_fit" ? '<span class="chip chip-bad">Does not fit</span>'
+      : block.status === "not_requested" ? '<span class="chip">No reserve submitted</span>'
+      : '<span class="chip">Placed</span>';
+    return `<details${key === payload.scenario ? " open" : ""}><summary>${escape(block.label)} ${status}</summary>
+      <p class="muted">${block.used_area_mm2} of ${block.usable_area_mm2} mm² usable · ${block.placed.length} placed</p>
+      <ul class="piece-list">${names ? `<li>${names}</li>` : "<li class='muted'>No piece placed.</li>"}</ul>${short}${bound}</details>`;
+  }).join("");
+  const compare = report.comparison;
+  const kept = report.scenarios[payload.scenario];
+  return `<div class="metrics">
+      <div><small>Usable cloth</small><strong>${Math.round(report.usable_area_mm2)} mm²</strong></div>
+      <div><small>Plane</small><strong>${report.plane_mm.map(value => Math.round(value)).join(" × ")} mm</strong></div>
+      <div><small>Defect margin</small><strong>${report.clearance_mm} mm</strong></div>
+    </div>
+    <p class="muted">Layout kept: <strong>${escape(kept.label)}</strong></p>
+    ${kept.status === "does_not_fit" ? `<p class="muted">This layout cannot be kept: ${kept.required_missing.map(escape).join(", ")} must be placed.</p>` : ""}
+    <p>${escape(compare.note)}</p>
+    ${compare.dropped_for_reserve.length ? `<p class="muted">Giving up for the reserve: ${compare.dropped_for_reserve.map(escape).join(", ")}.</p>` : ""}
+    ${compare.bound.certainly_impossible ? '<p class="muted">The requested pieces need more cloth than the calibrated plane contains.</p>' : ""}
+    ${rows}`;
+}
+
 const submitters = {
   async fabricForm(form, button) {
     const payload = fields(form);
@@ -481,6 +553,28 @@ const submitters = {
       notify("Physical calibration saved.");
     } else {
       result({}, {title:"Calibrated image preview",url:previewImage(await png(capturePath() + "/plane/preview.png",payload))});
+    }
+  },
+  async cutForm(form, button) {
+    const payload = cutPayload(form);
+    const endpoint = capturePath() + "/cut-plan";
+    if (button?.value === "save") {
+      const kept = await post(endpoint,payload);
+      await refreshActive();
+      const target = document.querySelector("#result");
+      if (target) target.innerHTML = `<h3>${escape(kept.title)} · ${escape(kept.kept_label)}</h3>
+        <img class="result-visual" src="${asset(kept.id,"map")}" alt="Kept cut layout">
+        <div class="actions"><button data-record="${kept.id}">Open retained cut plan</button>
+          <a class="button" href="${asset(kept.id,"csv",true)}" download>Download cut sheet (CSV)</a></div>
+        ${cutSummary(kept.analysis,payload)}`;
+      notify("Cut layout kept on the evidence desk.");
+    } else {
+      const report = await post(endpoint + "/preview",payload);
+      const image = previewImage(await png(endpoint + "/preview.png",payload));
+      const target = document.querySelector("#result");
+      if (target) target.innerHTML = `<h3>${escape(report.title)} · layout comparison</h3>
+        <img class="result-visual" src="${image}" alt="All requested cut layouts side by side">
+        ${cutSummary(report,payload)}`;
     }
   },
   async proofForm(form, button) {

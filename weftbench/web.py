@@ -9,7 +9,7 @@ from threading import BoundedSemaphore
 from flask import Blueprint, Flask, Response, jsonify, request, send_file, send_from_directory
 from werkzeug.exceptions import BadRequest, RequestEntityTooLarge
 
-from . import calibration_review, catalog, details, findings, gauge, inspection, intake_review, packets, proofs, readings, relaxation, visits
+from . import calibration_review, catalog, cutting, details, findings, gauge, inspection, intake_review, packets, proofs, readings, relaxation, visits
 from .contracts import (
     FACES, MARK_TYPES, MAX_PACKET_BYTES, ROLES, STATES, WEAVES,
     WorkbenchError, asset_label, choice, identifier, integer, mapping, point, slug,
@@ -219,6 +219,26 @@ def image_routes(api, store, heavy):
         _, image = details.collect(store, key(capture, "capture"), data())
         return bitmap(image)
 
+    @api.post("/captures/<capture>/cut-plan/preview")
+    @heavy
+    def preview_cut_plan(capture):
+        return cutting.preview(store, key(capture, "capture"), data())
+
+    @api.post("/captures/<capture>/cut-plan/preview.png")
+    @heavy
+    def render_cut_comparison(capture):
+        return bitmap(cutting.comparison(store, key(capture, "capture"), data()))
+
+    @api.post("/captures/<capture>/cut-plan/preview/<scenario>.png")
+    @heavy
+    def render_cut_plan(capture, scenario):
+        return bitmap(cutting.rendered(store, key(capture, "capture"), data(), scenario))
+
+    @api.post("/captures/<capture>/cut-plan")
+    @heavy
+    def save_cut_plan(capture):
+        return cutting.save_plan(store, key(capture, "capture"), data()), 201
+
     @api.post("/captures/<capture>/details")
     @heavy
     def save_details(capture):
@@ -273,6 +293,10 @@ def archive_routes(api, store, heavy):
     @api.get("/fabrics/<fabric>/timeline")
     def see_timeline(fabric):
         return visits.timeline(store, key(fabric, "fabric"), request.args.get("limit"))
+
+    @api.get("/fabrics/<fabric>/cut-plans")
+    def cut_plans(fabric):
+        return {"cut_plans": cutting.plan_index(store, key(fabric, "fabric"))}
 
     @api.post("/fabrics/<fabric>/visits")
     def visit(fabric):

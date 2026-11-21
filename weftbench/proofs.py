@@ -199,7 +199,8 @@ def card_for(page, table, position, image, source):
     page.paste(adapted, (x + (w - adapted.width) // 2, y + (h - 74 - adapted.height) // 2))
     title = ellipsize(source["title"], table, font(16, True), w - 29)
     table.text((x + 13, y + h - 65), title, fill=INK, font=font(16, True))
-    tag = f'{source["kind"].capitalize()} · recorded version {source["version"]}'
+    label_ = source["kind"].replace("_", " ").capitalize()
+    tag = f'{label_} · recorded version {source["version"]}'
     table.text((x + 13, y + h - 39), tag, fill=MUTED, font=font(13))
 
 
@@ -232,7 +233,7 @@ def evidence_rows(entries):
 
 
 def gather_entries(lib, parent, wanted):
-    allowed = {"captures", "readings", "swatches", "proofs", "details"}
+    allowed = {"captures", "readings", "swatches", "proofs", "details", "cut_plans"}
     result = []
     for key in wanted:
         one = lib.get(key, parent=parent)

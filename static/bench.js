@@ -65,11 +65,52 @@ export function toolFields(tool, context) {
   return options + (useArea ? defaultBox() : "");
 }
 
+const pieceRow = index => `<tr data-piece="${index}">
+  <td class="piece-index">${index + 1}</td>
+  <td><input data-piece-name type="text" maxlength="54" placeholder="Piece ${index + 1}" aria-label="Piece ${index + 1} name"></td>
+  <td><input data-piece-width type="number" min="1" max="4800" step="any" aria-label="Piece ${index + 1} width in millimetres"></td>
+  <td><input data-piece-height type="number" min="1" max="4800" step="any" aria-label="Piece ${index + 1} height in millimetres"></td>
+  <td><select data-piece-role aria-label="Piece ${index + 1} role">
+    <option value="">—</option>
+    <option value="required"${index === 0 ? " selected" : ""}>Must</option>
+    <option value="optional">Extra</option>
+  </select></td>
+  <td><input data-piece-locked type="checkbox" aria-label="Piece ${index + 1} grain locked"></td>
+</tr>`;
+
+function cutPane(context) {
+  const {plane, options} = context;
+  const defects = Object.entries(options.mark_types)
+    .filter(([key]) => !["fold", "ignore"].includes(key))
+    .map(([key, name]) =>
+      `<label class="inline"><input type="checkbox" name="defect" value="${key}" ${["stain","puncture","slub"].includes(key) ? "checked" : ""}> ${escape(name)}</label>`).join("")
+    + '<p class="muted small">Folds and areas marked “Exclude from analysis” never carry a piece, whatever is ticked here.</p>';
+  return `<form id="cutForm">
+    <p class="muted">Enter each rectangle's cut size in millimetres. Mandatory pieces are placed first; optional pieces are extras. Grain-locked pieces are never turned.</p>
+    ${plane ? "" : '<p class="muted">Select a saved calibration on this photo; cut sizes are millimetres on that fabric plane.</p>'}
+    ${field("Layout name","title","text","Cut layout","maxlength=90")}
+    <div class="two">${number("Defect safety margin (mm)","clearance_mm",10,0,300)}
+      ${select("Layout to keep","scenario",{optional:"Must + extras",required:"Must only",reserve:"Must + clean reserve"},"optional")}</div>
+    <table class="piece-table"><colgroup><col class="c-num"><col><col class="c-size"><col class="c-size"><col class="c-role"><col class="c-grain"></colgroup><thead><tr><th>#</th><th>Piece</th><th>W mm</th><th>H mm</th><th>Role</th><th>Grain</th></tr></thead>
+      <tbody>${[0,1,2,3,4,5].map(pieceRow).join("")}</tbody></table>
+    <p class="muted small">Role “Must” = mandatory, “Extra” = optional. Grain ticked = cannot be turned sideways.</p>
+    <details><summary>Clean reserve</summary>
+      <label class="inline"><input type="checkbox" name="use_reserve"> Plan a clean reserve</label>
+      <div class="two">${field("Name","reserve_name","text","Clean reserve","maxlength=54")}
+        ${checkbox("Grain locked","reserve_locked")}</div>
+      <div class="two">${number("Width (mm)","reserve_width_mm",0,0,4800)}${number("Height (mm)","reserve_height_mm",0,0,4800)}</div>
+    </details>
+    <details><summary>Which observations count as defects</summary>${defects}</details>
+    <div class="actions"><button type="submit" value="preview">Check layouts</button>
+      <button type="submit" value="save" class="primary">Keep selected layout</button></div>
+  </form>`;
+}
+
 export function pane(mode, context) {
   const {fabric,capture,plane,options,marks,tool} = context;
   const top = `<div class="action-tabs" aria-label="Image actions">
-    ${Object.entries({measure:"Measure",mark:"Observe",align:"Calibrate",proof:"Print",detail:"Details"}).map(([key,name]) =>
-      `<button data-mode="${key}" class="${key === mode ? "active" : ""}">${name}</button>`).join("")}
+    ${Object.entries({measure:"Measure",mark:"Observe",align:"Calibrate",cut:"Cut plan",proof:"Print",detail:"Details"}).map(([key,name]) =>
+      `<button type="button" data-mode="${key}" class="${key === mode ? "active" : ""}">${name}</button>`).join("")}
   </div>`;
   const readings = Object.fromEntries(Object.entries(options.tools).map(([id,item]) => [id,item.name]));
   if (mode === "measure") return top + `<form id="measureForm">
@@ -105,6 +146,7 @@ export function pane(mode, context) {
     <div class="actions"><button type="submit" value="preview">Preview details</button>
       <button type="submit" value="save" class="primary">Save detail sheet</button></div>
   </form>`;
+  if (mode === "cut") return top + cutPane(context);
   return top + `<form id="proofForm">
     ${field("Proof title","title","text","Fabric proof","required maxlength=90")}
     ${select("Paper size","paper",{a4:"A4",a3:"A3",letter:"US Letter"},"a4")}
