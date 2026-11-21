@@ -31,6 +31,9 @@ const settingsFor = {
   skew: () => "",
   bands: () => select("Trace direction","axis",{"cross-roll":"Across the width","along-roll":"Along the roll"},"cross-roll"),
   openings: () => few([number("Local contrast","contrast",0.145,0.015,0.85), number("Minimum area (px²)","min_area",20,2,900,1)]),
+  mesh: () => `<p class="muted">Draw one box over intact mesh as the lattice reference, then a separate box over the region to inspect.</p>
+    <label class="field">Intact mesh reference · normalized</label>${boxes("reference",[0.06,0.08,0.24,0.22])}${checkboxMarks("Draw intact reference","reference")}
+    ${few([number("Opening contrast","contrast",0.12,0.02,0.8), number("Enlarged ratio","growth",1.35,1.05,4)])}`,
   passage: () => `<p class="muted">Use a transmitted-light photo. Place the reference over uncovered light.</p>
     <label class="field">Light reference · normalized</label>${boxes("lit",[0.715,0.08,0.18,0.10])}${checkboxMarks("Draw light reference","lit")}`,
   relief: () => "",

@@ -249,7 +249,8 @@ function paneTo(mode) {
 function messageForGesture(mode) {
   const messages = {probe:"Click a pixel to sample it.",mark:"Click points on the photo to draw your observation.",
     corners:"Click the corners clockwise, starting at the top left.",region:"Drag on the photo to select the analysis area.",
-    lit:"Drag a box around the uncovered light reference.",landmarks:"Click a beginning and end for each measured span."};
+    lit:"Drag a box around the uncovered light reference.",landmarks:"Click a beginning and end for each measured span.",
+    reference:"Drag a box over intact mesh to use as the lattice reference."};
   return messages[mode];
 }
 
@@ -307,7 +308,7 @@ function draw() {
 }
 
 function placeBox() {
-  const selector = state.gesture === "lit" ? "lit" : "box";
+  const selector = ["lit","reference"].includes(state.gesture) ? state.gesture : "box";
   const target = document.querySelector(`[data-box="${selector}"]`);
   if (!target || !state.anchor || !state.cursor) return;
   const [[x,y],[a,b]] = [state.anchor,state.cursor];
@@ -323,7 +324,7 @@ function canvasEvents() {
   document.querySelector("#captureImage").addEventListener("load", draw);
   canvas.addEventListener("pointerdown", event => {
     if (event.button !== 0 || !state.gesture) return;
-    if (["region","lit"].includes(state.gesture)) {
+    if (["region","lit","reference"].includes(state.gesture)) {
       state.anchor = imagePoint(event);
       state.cursor = state.anchor;
       canvas.setPointerCapture(event.pointerId);
@@ -336,7 +337,7 @@ function canvasEvents() {
   });
   canvas.addEventListener("pointerup", event => {
     const position = imagePoint(event);
-    if (["region","lit"].includes(state.gesture)) {
+    if (["region","lit","reference"].includes(state.gesture)) {
       state.cursor = position;
       placeBox();
     } else if (state.gesture === "probe") {
@@ -355,9 +356,11 @@ async function measure(form, save) {
   const measurement = readBoxes(fields(form),form);
   const tool = measurement.tool;
   delete measurement.tool;
-  for (const key of ["mark","seam","cut","trace","reference"]) {
+  // "reference" is a paired-photo id for comparison tools, but a drawn box for mesh.
+  for (const key of ["mark","seam","cut","trace"]) {
     if (!measurement[key]) delete measurement[key];
   }
+  if (tool !== "mesh" && !measurement.reference) delete measurement.reference;
   if (tool === "checkpoints") {
     if (!state.plane) throw new Error("Select a calibrated fabric view first.");
     const payload = {

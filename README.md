@@ -14,8 +14,9 @@ For a Python-only launch, use Python 3.11 and install the versions in `requireme
 2. Open an incoming face photograph at the inspection bench. The coordinate selector switches between the saved physical plane and the original view. Use **Calibrate** to place four clockwise corners on a new source and save a plane.
 3. Select **Warp and weft pitch** and run or save the reading. Use **Observe** to draw a polygon or a sewn trace. Use **Sample pixel** for a local image-color and support reading.
 4. Choose a transmitted-light photograph for opening candidates or relative light passage. Choose a raking-light photograph for relief and optical abrasion. Select a compatible second view for paired inspection.
-5. Use **Details** to save picture crops with source location, coverage maps, and native working-pixel downloads. **Print** makes a cropped physical proof or fit-to-page PDF.
-6. Open the **Evidence desk** to review prior observations and measurements, approve a color reading, record a visit, assemble a contact sheet, or create and verify an evidence ZIP. File links download the retained bytes.
+5. On mesh or netting, use **Reference-guided mesh openings**: draw one box over intact mesh to learn the slanted lattice, then a separate box over the region to inspect. Routine openings stay quiet; new, enlarged and merged holes are reported separately, with connected tears listed once together with the lattice positions they occupy. Hidden or unclear positions are held for review. The ordinary **Opening candidates** tool remains available unchanged.
+6. Use **Details** to save picture crops with source location, coverage maps, and native working-pixel downloads. **Print** makes a cropped physical proof or fit-to-page PDF.
+7. Open the **Evidence desk** to review prior observations and measurements, approve a color reading, record a visit, assemble a contact sheet, or create and verify an evidence ZIP. File links download the retained bytes.
 
 ## Image inputs and limits
 

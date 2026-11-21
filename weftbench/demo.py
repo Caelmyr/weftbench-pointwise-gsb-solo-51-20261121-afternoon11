@@ -62,6 +62,10 @@ BLUESTONE = WeavePlan(
     700, 560, 7.0, 8.0, -0.055, 2.1,
     (0.47, 0.39, 0.64), (0.11, 0.16, 0.28), 0.25, 59.5, "pane",
 )
+MESH = WeavePlan(
+    720, 600, 15.0, 13.5, 0.12, 1.4,
+    (0.32, 0.40, 0.45), (0.10, 0.15, 0.19), 0.10, 48.0, "bands",
+)
 SERIES = {
     "Juniper twill": [
         CameraTake("Juniper · incoming face", "face", "woven roll on bench", 1.0, 0.0, 0.15, 1.0, 0.17, 31),
@@ -76,6 +80,11 @@ SERIES = {
         CameraTake("Bluestone · oblique beam", "rake", "reference swatch", 1.03, 0.0, 0.18, 0.8, 0.17, 45),
         CameraTake("Bluestone · current face", "face", "second inspection", 1.03, 1.2, 0.38, 1.1, 0.11, 46),
         CameraTake("Bluestone · neutral reference", "reference", "second inspection", 1.0, 0.0, 0.0, 0.0, 0.09, 47),
+    ],
+    "Halcyon netting": [
+        CameraTake("Halcyon · mesh face", "face", "netting roll on bench", 1.0, 0.0, 0.10, 0.6, 0.10, 61),
+        CameraTake("Halcyon · transmitted light", "backlight", "netting roll on bench", 1.0, 0.0, 0.10, 0.9, 0.06, 62),
+        CameraTake("Halcyon · raking beam", "rake", "netting roll on bench", 1.0, 0.0, 0.14, 0.6, 0.14, 63),
     ],
 }
 
@@ -242,6 +251,8 @@ def textile_picture(plan, take):
     rng = np.random.default_rng(take.seed)
     if take.role == "reference":
         return png(digital_reference(plan, take))
+    if plan is MESH and take.role == "backlight":
+        return mesh_picture(plan, take)
     fields = fabric_signals(plan, take)
     if take.role == "backlight":
         data = colors_under_transmission(plan, fields, take)
@@ -256,6 +267,83 @@ def textile_picture(plan, take):
 
 def demo_gallery_photo():
     return textile_picture(JUNIPER, SERIES["Juniper twill"][0])
+
+
+# Fixed landmarks for the procedural Halcyon netting sample.
+MESH_BASIS_A = np.array([15.0, 2.6])
+MESH_BASIS_B = np.array([-2.2, 13.4])
+MESH_ORIGIN = np.array([46.0, 40.0])
+MESH_CLAMP = (150.0, 470.0, 78.0, 46.0)
+MESH_ENLARGED = (18, 6)
+MESH_MERGED = [(24, 20), (25, 20), (24, 21), (25, 21)]
+MESH_NEW_CELL = (16, 26)
+
+
+def mesh_site_centers(plan):
+    """Slanted, gently warped lattice positions for the netting sample."""
+    width, height = plan.size
+    y_index = np.arange(height)
+    x_index = np.arange(width)
+    warp_x = 1.6 * np.sin(y_index / 95.0)
+    warp_y = 1.2 * np.cos(x_index / 110.0)
+    centers = {}
+    for i in range(-60, 61):
+        for j in range(-60, 61):
+            cx, cy = (MESH_ORIGIN + i * MESH_BASIS_A + j * MESH_BASIS_B).tolist()
+            cx += float(warp_x[int(np.clip(round(cy), 0, height - 1))])
+            cy += float(warp_y[int(np.clip(round(cx), 0, width - 1))])
+            if 6 <= cx < width - 6 and 6 <= cy < height - 6:
+                centers[(i, j)] = (cx, cy)
+    return centers
+
+
+def mesh_picture(plan, take):
+    """Transmitted-light netting with routine holes and known defect witnesses."""
+    rng = np.random.default_rng(take.seed)
+    width, height = plan.size
+    yy, xx = np.mgrid[:height, :width]
+    centers = mesh_site_centers(plan)
+    data = np.full((height, width, 3), 0.05, np.float32)
+    data += rng.normal(0, 0.006, (height, width, 1)).astype(np.float32)
+    for cx, cy in centers.values():
+        glow = 0.62 * np.exp(-(((xx - cx) ** 2) / 9.5 + ((yy - cy) ** 2) / 9.5))
+        data[..., 0] += glow * 0.96
+        data[..., 1] += glow * 0.86
+        data[..., 2] += glow * 0.70
+
+    # Clamp occlusion across the lower-left section.
+    clamp_x, clamp_y, clamp_rx, clamp_ry = MESH_CLAMP
+    clamp = ((xx - clamp_x) / clamp_rx) ** 2 + ((yy - clamp_y) / clamp_ry) ** 2 < 1
+    data[clamp] = [0.012, 0.011, 0.010]
+
+    # One routine opening deliberately enlarged.
+    ex, ey = centers[MESH_ENLARGED]
+    swell = np.exp(-(((xx - ex) ** 2) / 26 + ((yy - ey) ** 2) / 26))
+    data[..., 0] += 0.55 * 0.96 * swell
+    data[..., 1] += 0.50 * 0.86 * swell
+    data[..., 2] += 0.40 * 0.70 * swell
+
+    # A single connected tear spanning four adjacent lattice positions.
+    merged_x = float(np.mean([centers[site][0] for site in MESH_MERGED]))
+    merged_y = float(np.mean([centers[site][1] for site in MESH_MERGED]))
+    tear = 0.8 * np.exp(-(((xx - merged_x) ** 2) / 150 + ((yy - merged_y) ** 2) / 120))
+    data[..., 0] += tear * 0.96
+    data[..., 1] += tear * 0.86
+    data[..., 2] += tear * 0.70
+
+    # A new opening inside a lattice cell where no routine mesh position exists.
+    nx_, ny_ = centers[MESH_NEW_CELL]
+    nx_ += 7.0
+    ny_ += 7.5
+    new_hole = 0.8 * np.exp(-(((xx - nx_) ** 2) / 20 + ((yy - ny_) ** 2) / 20))
+    data[..., 0] += new_hole * 0.96
+    data[..., 1] += new_hole * 0.86
+    data[..., 2] += new_hole * 0.70
+
+    valid = ((xx >= 10 + 1.5 * np.sin(yy / 60)) & (xx < width - 8)
+             & (yy >= 9) & (yy < height - 7) & ~clamp)
+    raster = Raster(np.clip(data, 0, 1).astype(np.float32), valid)
+    return png(rgba(raster))
 
 
 def install_training_plane(lib, item, fabric):
@@ -291,9 +379,11 @@ def selector_band():
 
 
 def seed_fabric(lib, title, settings, dimensions, index):
+    is_mesh = settings is MESH
     material = lib.add("fabrics", {
         "title": title, "roll_code": f"TRAIN-{109 + index}", "lot": "Procedural training collection",
-        "weave": "twill" if index == 1 else "plain", "width_mm": dimensions[0], "length_mm": dimensions[1],
+        "weave": "open" if is_mesh else ("twill" if index == 1 else "plain"),
+        "width_mm": dimensions[0], "length_mm": dimensions[1],
         "memo": "Synthetic woven images for inspecting the tools and visible evidence.", "state": "active",
         "training": True,
     }, action="training fabric created")
@@ -308,6 +398,20 @@ def seed_fabric(lib, title, settings, dimensions, index):
         if take.role != "reference":
             retained_planes[document["id"]] = install_training_plane(lib, document, material)
         files.append(document)
+    if is_mesh:
+        backlight = next(row for row in files if row["title"].endswith("transmitted light"))
+        plane = retained_planes[backlight["id"]]
+        mesh_ctx = view(lib, backlight["id"], plane_key=plane["id"])
+        clamp_x, clamp_y, clamp_rx, clamp_ry = MESH_CLAMP
+        width, height = settings.size
+        install_training_mark(
+            lib, mesh_ctx, "Support clamp occlusion", "ignore",
+            [[(clamp_x - clamp_rx) / width, (clamp_y - clamp_ry) / height],
+             [(clamp_x + clamp_rx) / width, (clamp_y - clamp_ry) / height],
+             [(clamp_x + clamp_rx) / width, (clamp_y + clamp_ry) / height],
+             [(clamp_x - clamp_rx) / width, (clamp_y + clamp_ry) / height]], observed="accepted",
+        )
+        return {"fabric": material["id"], "captures": [row["id"] for row in files]}
     source = files[0]
     built = retained_planes[source["id"]]
     current = view(lib, source["id"], plane_key=built["id"])
@@ -328,5 +432,6 @@ def seed_training(store):
         result = [
             seed_fabric(lib, "Juniper twill", JUNIPER, (444, 385), 1),
             seed_fabric(lib, "Bluestone check", BLUESTONE, (397, 324), 2),
+            seed_fabric(lib, "Halcyon netting", MESH, (420, 350), 3),
         ]
     return {"training": result, "count": sum(len(row["captures"]) for row in result)}
