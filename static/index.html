@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f5f4ed">
+  <title>WeftBench | Fabric inspection</title>
+  <link rel="stylesheet" href="/ui/style.css">
+  <script type="module" src="/ui/app.js"></script>
+</head>
+<body>
+  <header class="top">
+    <a class="identity" href="#library"><span class="brandmark" aria-hidden="true"></span><strong>WeftBench</strong></a>
+    <nav id="tabs" aria-label="Workbench">
+      <button data-tab="library" class="selected">Fabric library</button>
+      <button data-tab="workbench">Inspection bench</button>
+      <button data-tab="archive">Evidence desk</button>
+    </nav>
+    <span class="local"><i></i> Local library</span>
+  </header>
+  <main id="app" aria-busy="true"><div class="loading">Opening the fabric library…</div></main>
+  <dialog id="dialog"></dialog>
+  <div id="notice" role="status" aria-live="polite"></div>
+  <footer><span>WeftBench</span><span>Image-based fabric inspection</span></footer>
+</body>
+</html>

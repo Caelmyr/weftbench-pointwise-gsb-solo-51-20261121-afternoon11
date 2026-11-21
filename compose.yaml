@@ -1,0 +1,26 @@
+name: solo54-weftbench
+services:
+  workbench:
+    build:
+      context: .
+      args:
+        WEFTBENCH_DEPS_IMAGE: ${WEFTBENCH_DEPS_IMAGE:-python:3.11-slim}
+    image: ${WEFTBENCH_IMAGE:-solo54-weftbench:1.0}
+    init: true
+    network_mode: bridge
+    ports:
+      - "127.0.0.1:${WEFTBENCH_PORT:-19954}:8000"
+    volumes:
+      - mill-library:/var/lib/weftbench
+    environment:
+      WEFTBENCH_DATA: /var/lib/weftbench
+      OPENBLAS_NUM_THREADS: "1"
+      OMP_NUM_THREADS: "1"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=2)"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+    restart: unless-stopped
+volumes:
+  mill-library:
