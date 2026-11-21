@@ -5,7 +5,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from . import comparison, inspection, seams, surface, weave
+from . import comparison, inspection, nap, seams, surface, weave
 from .catalog import detached, version, view
 from .contracts import (
     MAX_RESULTS, WorkbenchError, asset_label, choice, conflict, flag, identifier,
@@ -36,6 +36,7 @@ TOOLS = {
     "color": InspectionTool("Cloth color and variation", "Color observation", inspection.swatch_reading),
     "relief": InspectionTool("Surface fibre relief", "Raking light", surface.relief),
     "abrasion": InspectionTool("Optical abrasion strips", "Raking light", surface.abrasion_profile),
+    "nap": InspectionTool("Nap lay from opposite raking lights", "Raking light", nap.nap_direction, True),
     "allowance": InspectionTool("Seam allowance", "Sewn finish", seams.allowance),
     "stitches": InspectionTool("Stitch rhythm", "Sewn finish", seams.stitches),
     "section": InspectionTool("Three-way surface profile", "Sewn finish", seams.edge_profile),

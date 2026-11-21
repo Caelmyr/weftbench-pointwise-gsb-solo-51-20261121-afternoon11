@@ -25,6 +25,11 @@ function markChoices(marks, kinds, includeNone = true) {
     ...Object.fromEntries(marks.filter(row => kinds.includes(row.mark_type)).map(row => [row.id,row.title]))};
 }
 
+const LIGHT_DIRECTIONS = {
+  right:"Light from right", left:"Light from left", up:"Light from top", down:"Light from bottom",
+  "down-right":"Light from lower right", "down-left":"Light from lower left",
+  "up-right":"Light from upper right", "up-left":"Light from upper left",
+};
 const settingsFor = {
   audit: () => few([number("Low signal", "low", 0.045, 0.005, 0.30), number("Highlight threshold", "high", 0.94, 0.60, 0.999)]),
   pitch: () => few([number("Shortest spacing (px)","min_period",3,2.2,24), number("Longest spacing (px)","max_period",36,3,100)]),
@@ -35,6 +40,12 @@ const settingsFor = {
     <label class="field">Light reference · normalized</label>${boxes("lit",[0.715,0.08,0.18,0.10])}${checkboxMarks("Draw light reference","lit")}`,
   relief: () => "",
   abrasion: () => select("Strip direction","direction",{horizontal:"Horizontal",vertical:"Vertical"},"horizontal"),
+  nap: ({fabric,capture}) => select("Other raking-light photograph","reference",
+      captureChoices(fabric,capture.id, row => row.role === "rake")) +
+    `<p class="muted">Both photos must show the same calibrated cloth area with side light from opposite directions.</p>
+    <div class="two">${select("This photo light direction","light",LIGHT_DIRECTIONS,"right")}
+    ${select("Other photo light direction","reference_light",LIGHT_DIRECTIONS,"left")}</div>
+    <p class="muted">Cells where the fibre axis is readable but the lay is not get a check marker, not an arrow. Folds and areas clear on only one photo are never arrowed.</p>`,
   color: ({marks}) => select("Optional color region","mark",{"":"Use analysis area", ...markChoices(marks,["area","proof","stain"],false)},""),
   allowance: ({marks}) => select("Sewn trace","seam",markChoices(marks,["seam"])) +
     select("Cut trace","cut",markChoices(marks,["cut","selvedge"])) +
